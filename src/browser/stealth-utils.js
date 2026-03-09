@@ -10,8 +10,11 @@ export function randomDelay(min = 500, max = 1500) {
 
 // Stealth browser launch
 export async function launchStealthBrowser() {
+  const isHeadless = process.env.HEADLESS === 'true';
+  log.info(`Launching browser (headless: ${isHeadless})...`);
+
   const browser = await chromium.launch({
-    headless: false,
+    headless: isHeadless,
     args: [
       '--disable-blink-features=AutomationControlled',
       '--disable-features=IsolateOrigins,site-per-process',

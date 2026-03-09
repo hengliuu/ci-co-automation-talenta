@@ -1,0 +1,72 @@
+name: Talenta Attendance
+
+on:
+  schedule:
+    # Clock In: 08:55 WIB (UTC+7) = 01:55 UTC
+    - cron: "55 1 * * 1-5"
+    # Clock Out: 18:07 WIB (UTC+7) = 11:07 UTC
+    - cron: "7 11 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to run"
+        required: true
+        type: choice
+        options:
+          - clock-in
+          - clock-out
+
+jobs:
+  attendance:
+    # Skip cron runs when CRON_ENABLED is not 'true'
+    # Manual trigger (workflow_dispatch) always runs regardless
+    if: github.event_name == 'workflow_dispatch' || vars.CRON_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TALENTA_EMAIL: ${{ secrets.TALENTA_EMAIL }}
+      TALENTA_PASSWORD: ${{ secrets.TALENTA_PASSWORD }}
+      HEADLESS: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      # Determine which action to run
+      # Schedule: cron '55 1' = clock-in, cron '5 11' = clock-out
+      # Manual: uses workflow_dispatch input
+      - name: Determine action
+        id: action
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=${{ github.event.inputs.action }}" >> $GITHUB_OUTPUT
+          elif [ "$(date -u +%H)" -lt 6 ]; then
+            echo "run=clock-in" >> $GITHUB_OUTPUT
+          else
+            echo "run=clock-out" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run ${{ steps.action.outputs.run }}
+        run: pnpm run ${{ steps.action.outputs.run }}
+
+      - name: Upload error screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-screenshot-${{ steps.action.outputs.run }}-${{ github.run_number }}
+          path: error-*.png
+          retention-days: 3
