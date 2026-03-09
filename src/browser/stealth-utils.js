@@ -32,7 +32,10 @@ export async function launchStealthBrowser() {
     viewport: { width: 1920, height: 1080 },
     locale: 'id-ID',
     timezoneId: 'Asia/Jakarta',
-    geolocation: { latitude: -6.1993335, longitude: 106.7623687 },
+    geolocation: {
+      latitude: parseFloat(process.env.GEO_LAT || '-6.1993335'),
+      longitude: parseFloat(process.env.GEO_LNG || '106.7623687'),
+    },
     permissions: ['geolocation'],
     colorScheme: 'light',
     hasTouch: false,

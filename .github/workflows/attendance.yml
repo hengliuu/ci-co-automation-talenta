@@ -2,10 +2,10 @@ name: Talenta Attendance
 
 on:
   schedule:
-    # Clock In: 08:55 WIB (UTC+7) = 01:55 UTC
-    - cron: "55 1 * * 1-5"
-    # Clock Out: 18:07 WIB (UTC+7) = 11:07 UTC
-    - cron: "7 11 * * 1-5"
+    # Clock In: 08:50 WIB (UTC+7) = 01:50 UTC
+    - cron: "50 1 * * 1-5"
+    # Clock Out: 18:00 WIB (UTC+7) = 11:00 UTC
+    - cron: "0 11 * * 1-5"
   workflow_dispatch:
     inputs:
       action:
@@ -46,9 +46,28 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
 
-      # Determine which action to run
-      # Schedule: cron '55 1' = clock-in, cron '5 11' = clock-out
-      # Manual: uses workflow_dispatch input
+      # Random delay 0-5 minutes for cron runs (skip for manual trigger)
+      - name: Random sleep
+        if: github.event_name == 'schedule'
+        run: |
+          SLEEP=$((RANDOM % 300))
+          echo "Sleeping for ${SLEEP}s (~$((SLEEP / 60))m)..."
+          sleep $SLEEP
+
+      - name: Determine geolocation
+        id: geo
+        run: |
+          DOW=$(date -u +%u)
+          if [ "$DOW" = "1" ] || [ "$DOW" = "5" ]; then
+            echo "Monday/Friday — using alternate location"
+            echo "lat=-6.209077123779666" >> $GITHUB_OUTPUT
+            echo "lng=106.63438083176038" >> $GITHUB_OUTPUT
+          else
+            echo "Tue-Thu — using default location"
+            echo "lat=-6.1993335" >> $GITHUB_OUTPUT
+            echo "lng=106.7623687" >> $GITHUB_OUTPUT
+          fi
+
       - name: Determine action
         id: action
         run: |
@@ -62,6 +81,9 @@ jobs:
 
       - name: Run ${{ steps.action.outputs.run }}
         run: pnpm run ${{ steps.action.outputs.run }}
+        env:
+          GEO_LAT: ${{ steps.geo.outputs.lat }}
+          GEO_LNG: ${{ steps.geo.outputs.lng }}
 
       - name: Upload error screenshot
         if: failure()
