@@ -2,10 +2,10 @@ name: Talenta Attendance
 
 on:
   schedule:
-    # Clock In: 08:50 WIB (UTC+7) = 01:50 UTC
-    - cron: "50 1 * * 1-5"
-    # Clock Out: 18:00 WIB (UTC+7) = 11:00 UTC
-    - cron: "0 11 * * 1-5"
+    # Clock In: 08:30 WIB (UTC+7) = 01:30 UTC
+    - cron: "30 1 * * 1-5"
+    # Clock Out: 17:45 WIB (UTC+7) = 10:45 UTC
+    - cron: "45 10 * * 1-5"
   workflow_dispatch:
     inputs:
       action:
@@ -45,14 +45,6 @@ jobs:
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
-
-      # Random delay 0-5 minutes for cron runs (skip for manual trigger)
-      - name: Random sleep
-        if: github.event_name == 'schedule'
-        run: |
-          SLEEP=$((RANDOM % 300))
-          echo "Sleeping for ${SLEEP}s (~$((SLEEP / 60))m)..."
-          sleep $SLEEP
 
       - name: Determine geolocation
         id: geo
