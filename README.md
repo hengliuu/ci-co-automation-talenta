@@ -120,8 +120,8 @@ Workflows are split into 2 files: `clock-in.yml` and `clock-out.yml`. Both are t
 
   ```text
   Authorization: Bearer <GITHUB_PAT>
-  Accept: application/vnd.github+v3+json
-  User-Agent: cron-job.org
+  Accept: application/vnd.github+json
+  X-GitHub-Api-Version: 2022-11-28
   ```
 
 - Request body:
