@@ -1,27 +1,10 @@
-name: Talenta Attendance
+name: Clock In
 
 on:
-  schedule:
-    # Clock In: target ~08:45 WIB, compensating GitHub delay
-    # 07:20 WIB = 00:20 UTC
-    - cron: "20 0 * * 1-5"
-    # Clock Out: target ~18:05 WIB, compensating ~30m GitHub delay
-    # 17:30 WIB = 10:30 UTC
-    - cron: "30 10 * * 1-5"
   workflow_dispatch:
-    inputs:
-      action:
-        description: "Action to run"
-        required: true
-        type: choice
-        options:
-          - clock-in
-          - clock-out
 
 jobs:
-  attendance:
-    # Skip cron runs when CRON_ENABLED is not 'true'
-    # Manual trigger (workflow_dispatch) always runs regardless
+  clock-in:
     if: github.event_name == 'workflow_dispatch' || vars.CRON_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -62,19 +45,8 @@ jobs:
             echo "lng=106.7623687" >> $GITHUB_OUTPUT
           fi
 
-      - name: Determine action
-        id: action
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "run=${{ github.event.inputs.action }}" >> $GITHUB_OUTPUT
-          elif [ "$(date -u +%H)" -lt 6 ]; then
-            echo "run=clock-in" >> $GITHUB_OUTPUT
-          else
-            echo "run=clock-out" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Run ${{ steps.action.outputs.run }}
-        run: pnpm run ${{ steps.action.outputs.run }}
+      - name: Run clock-in
+        run: pnpm run clock-in
         env:
           GEO_LAT: ${{ steps.geo.outputs.lat }}
           GEO_LNG: ${{ steps.geo.outputs.lng }}
@@ -83,6 +55,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: error-screenshot-${{ steps.action.outputs.run }}-${{ github.run_number }}
+          name: error-screenshot-clock-in-${{ github.run_number }}
           path: error-*.png
           retention-days: 3

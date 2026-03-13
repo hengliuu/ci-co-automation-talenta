@@ -1,0 +1,60 @@
+name: Clock Out
+
+on:
+  workflow_dispatch:
+
+jobs:
+  clock-out:
+    if: github.event_name == 'workflow_dispatch' || vars.CRON_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TALENTA_EMAIL: ${{ secrets.TALENTA_EMAIL }}
+      TALENTA_PASSWORD: ${{ secrets.TALENTA_PASSWORD }}
+      HEADLESS: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Determine geolocation
+        id: geo
+        run: |
+          DOW=$(date -u +%u)
+          if [ "$DOW" = "1" ] || [ "$DOW" = "5" ]; then
+            echo "Monday/Friday — using alternate location"
+            echo "lat=-6.209077123779666" >> $GITHUB_OUTPUT
+            echo "lng=106.63438083176038" >> $GITHUB_OUTPUT
+          else
+            echo "Tue-Thu — using default location"
+            echo "lat=-6.1993335" >> $GITHUB_OUTPUT
+            echo "lng=106.7623687" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run clock-out
+        run: pnpm run clock-out
+        env:
+          GEO_LAT: ${{ steps.geo.outputs.lat }}
+          GEO_LNG: ${{ steps.geo.outputs.lng }}
+
+      - name: Upload error screenshot
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-screenshot-clock-out-${{ github.run_number }}
+          path: error-*.png
+          retention-days: 3
