@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { launchStealthBrowser, humanClick, randomDelay } from '../browser/stealth-utils.js';
 import { createLogger } from '../core/logger.js';
-import { ensureLoggedIn } from './auth.js';
+import { ensureLoggedIn, logout } from './auth.js';
 
 dotenv.config();
 
@@ -69,6 +69,9 @@ async function main() {
     log.error(`Fatal error: ${error.message}`);
     await page.screenshot({ path: 'error-clock-in.png' });
   }
+
+  // Logout sebelum tutup browser
+  await logout(page, log);
 
   setTimeout(async () => {
     await browser.close();

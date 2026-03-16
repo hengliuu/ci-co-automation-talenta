@@ -25,3 +25,25 @@ export async function ensureLoggedIn(page, log) {
   await page.waitForTimeout(2000);
   log.success('Login successful');
 }
+
+export async function logout(page, log) {
+  try {
+    log.start('Logging out...');
+
+    // Try navigating to logout URL directly (most reliable)
+    await page.goto('https://hr.talenta.co/site/sign-out', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.waitForTimeout(2000);
+
+    // Verify we're back at login page
+    const emailInput = page.locator('input[type="email"], input[name="email"]');
+    const isLoginPage = await emailInput.isVisible({ timeout: 5000 }).catch(() => false);
+
+    if (isLoginPage) {
+      log.success('Logout berhasil');
+    } else {
+      log.warn('Logout mungkin belum berhasil, tapi browser akan ditutup');
+    }
+  } catch (error) {
+    log.warn(`Logout error: ${error.message}, browser akan tetap ditutup`);
+  }
+}
