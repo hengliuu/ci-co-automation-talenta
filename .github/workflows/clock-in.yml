@@ -12,6 +12,7 @@ jobs:
       TALENTA_EMAIL: ${{ secrets.TALENTA_EMAIL }}
       TALENTA_PASSWORD: ${{ secrets.TALENTA_PASSWORD }}
       HEADLESS: "true"
+      TZ: Asia/Jakarta
 
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +31,17 @@ jobs:
 
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          args: --exit-node=${{ secrets.TS_EXIT_NODE }} --accept-routes
+
+      - name: Verify IP location
+        run: curl -s https://ipinfo.io/json | jq '{ip, city, region, country}'
 
       - name: Determine geolocation
         id: geo

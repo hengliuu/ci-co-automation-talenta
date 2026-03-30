@@ -21,10 +21,15 @@ export async function launchStealthBrowser() {
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-infobars',
+      '--disable-webrtc',
+      '--enforce-webrtc-ip-permission-check',
       '--window-size=1920,1080',
       '--start-maximized',
     ],
   });
+
+  const geoLat = parseFloat(process.env.GEO_LAT || '-6.1993335');
+  const geoLng = parseFloat(process.env.GEO_LNG || '106.7623687');
 
   const context = await browser.newContext({
     userAgent:
@@ -33,8 +38,8 @@ export async function launchStealthBrowser() {
     locale: 'id-ID',
     timezoneId: 'Asia/Jakarta',
     geolocation: {
-      latitude: parseFloat(process.env.GEO_LAT || '-6.1993335'),
-      longitude: parseFloat(process.env.GEO_LNG || '106.7623687'),
+      latitude: geoLat,
+      longitude: geoLng,
     },
     permissions: ['geolocation'],
     colorScheme: 'light',
@@ -43,7 +48,7 @@ export async function launchStealthBrowser() {
   });
 
   // Stealth patches
-  await context.addInitScript(() => {
+  await context.addInitScript(({ lat, lng }) => {
     // Override webdriver flag
     Object.defineProperty(navigator, 'webdriver', { get: () => false });
 
@@ -71,7 +76,38 @@ export async function launchStealthBrowser() {
       parameters.name === 'notifications'
         ? Promise.resolve({ state: Notification.permission })
         : originalQuery(parameters);
-  });
+
+    // Block WebRTC IP leak
+    if (window.RTCPeerConnection) {
+      const OriginalRTC = window.RTCPeerConnection;
+      window.RTCPeerConnection = class extends OriginalRTC {
+        constructor(config) {
+          if (config && config.iceServers) config.iceServers = [];
+          super(config);
+        }
+      };
+    }
+
+    // Override navigator.geolocation
+    navigator.geolocation.getCurrentPosition = function (success) {
+      success({
+        coords: {
+          latitude: lat,
+          longitude: lng,
+          accuracy: 20 + Math.random() * 30,
+          altitude: null,
+          altitudeAccuracy: null,
+          heading: null,
+          speed: null,
+        },
+        timestamp: Date.now(),
+      });
+    };
+    navigator.geolocation.watchPosition = function (success) {
+      navigator.geolocation.getCurrentPosition(success);
+      return 1;
+    };
+  }, { lat: geoLat, lng: geoLng });
 
   await context.grantPermissions(['geolocation'], {
     origin: 'https://hr.talenta.co',
