@@ -38,7 +38,9 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-          args: --exit-node=${{ secrets.TS_EXIT_NODE }} --accept-routes
+
+      - name: Route traffic through exit node
+        run: sudo -E tailscale set --exit-node=${{ secrets.TS_EXIT_NODE }} --accept-routes
 
       - name: Verify IP location
         run: curl -s https://ipinfo.io/json | jq '{ip, city, region, country}'
