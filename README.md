@@ -34,9 +34,12 @@ This tool automates daily attendance on Talenta HR by launching a stealth Chromi
 ## Features
 
 - Stealth Chromium browser with anti-detection patches (webdriver flag, fake plugins, chrome runtime spoofing)
+- WebRTC leak protection (disables ICE servers and blocks real IP exposure)
+- Hardened geolocation override via `addInitScript` injection (overrides `getCurrentPosition` and `watchPosition`)
 - Human-like interactions: hover before click, randomized delays, scroll into view
 - Multi-fallback click strategy (normal → force → manual event dispatch)
 - Geolocation spoofing (Jakarta, Indonesia) with `id-ID` locale and `Asia/Jakarta` timezone
+- Tailscale VPN exit node in CI to route traffic through an Indonesian IP
 - Auto-login with session detection (skips login if already authenticated)
 - Retry logic (up to 3 attempts) with error screenshots on final failure
 - API response interception to confirm attendance was recorded
@@ -49,6 +52,7 @@ This tool automates daily attendance on Talenta HR by launching a stealth Chromi
 - Node.js v16+
 - pnpm (or npm)
 - Stable internet connection
+- Tailscale account with OAuth client (for GitHub Actions VPN routing — see [setup](#4-setup-tailscale-vpn-for-ci))
 
 ## Setup
 
@@ -139,7 +143,24 @@ Workflows are split into 2 files: `clock-in.yml` and `clock-out.yml`. Both are t
 
 > Replace `{OWNER}` and `{REPO}` with your GitHub username and repository name.
 
-#### 3. Holiday / leave control
+#### 3. Setup Tailscale VPN for CI
+
+The GitHub Actions workflows route traffic through a Tailscale exit node so the runner's IP appears to be in Indonesia. This prevents IP-based blocking by Talenta.
+
+1. Create a [Tailscale](https://tailscale.com) account and set up a tailnet
+2. Add an exit node in Indonesia (e.g. a VPS or home device running Tailscale with `--advertise-exit-node`)
+3. Create an OAuth client in the [Tailscale admin console](https://login.tailscale.com/admin/settings/oauth) with the `tag:ci` tag
+4. Add the following secrets to your GitHub repository (**Settings > Secrets and variables > Actions > Secrets**):
+
+   | Secret | Description |
+   | --- | --- |
+   | `TS_OAUTH_CLIENT_ID` | Tailscale OAuth client ID |
+   | `TS_OAUTH_SECRET` | Tailscale OAuth client secret |
+   | `TS_EXIT_NODE` | Hostname or IP of your Tailscale exit node in Indonesia |
+
+The workflow includes a "Verify IP location" step that prints the runner's public IP and geolocation via `ipinfo.io` so you can confirm the VPN is working.
+
+#### 4. Holiday / leave control
 
 - Set the repository variable `CRON_ENABLED` to `false` in **Settings > Secrets and variables > Actions > Variables** to skip all cron triggers.
 - `workflow_dispatch` (manual trigger) still runs regardless of the `CRON_ENABLED` value.
@@ -172,6 +193,7 @@ See [setup-task-scheduler.md](setup-task-scheduler.md) for step-by-step instruct
 | Clock In/Out button not found | Talenta UI may have changed; inspect the page and update selectors |
 | Task doesn't run on schedule | Ensure the computer is awake (not in sleep/hibernate) at the scheduled time |
 | Bot detection | The stealth utils should handle this, but Talenta may update their detection; check `stealth-utils.js` |
+| CI IP location is wrong | Verify Tailscale exit node is running and `TS_EXIT_NODE` secret is correct; check the "Verify IP location" step output in the workflow run |
 | Script errors | Check the error screenshot (`error-clock-in.png` / `error-clock-out.png`) saved in the project root |
 
 ## Notes
