@@ -15,15 +15,15 @@ jobs:
       TZ: Asia/Jakarta
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v4
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -67,7 +67,7 @@ jobs:
 
       - name: Upload error screenshot
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: error-screenshot-clock-out-${{ github.run_number }}
           path: error-*.png
