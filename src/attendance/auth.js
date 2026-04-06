@@ -12,9 +12,18 @@ export async function ensureLoggedIn(page, log) {
     return;
   }
 
+  // Read credentials once, then wipe from env immediately after use
+  const email = process.env.TALENTA_EMAIL;
+  const password = process.env.TALENTA_PASSWORD;
+
   log.info('Filling credentials...');
-  await page.fill('input[type="email"], input[name="email"]', process.env.TALENTA_EMAIL);
-  await page.locator('input[type="password"]').first().fill(process.env.TALENTA_PASSWORD);
+  await page.fill('input[type="email"], input[name="email"]', email);
+  await page.locator('input[type="password"]').first().fill(password);
+
+  // Wipe credentials from environment immediately after filling form
+  delete process.env.TALENTA_EMAIL;
+  delete process.env.TALENTA_PASSWORD;
+  log.info('Credentials wiped from environment');
 
   log.start('Signing in...');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
@@ -45,5 +54,28 @@ export async function logout(page, log) {
     }
   } catch (error) {
     log.warn(`Logout error: ${error.message}, browser akan tetap ditutup`);
+  }
+
+  // Clear all browser storage to remove session tokens and cookies
+  await clearBrowserData(page, log);
+}
+
+export async function clearBrowserData(page, log) {
+  try {
+    log.start('Clearing browser data...');
+    const context = page.context();
+
+    // Clear all cookies
+    await context.clearCookies();
+
+    // Clear localStorage and sessionStorage
+    await page.evaluate(() => {
+      try { localStorage.clear(); } catch { }
+      try { sessionStorage.clear(); } catch { }
+    });
+
+    log.success('Browser data cleared');
+  } catch (error) {
+    log.warn(`Clear browser data error: ${error.message}`);
   }
 }

@@ -73,6 +73,10 @@ async function main() {
   // Logout sebelum tutup browser
   await logout(page, log);
 
+  // Final cleanup: wipe any remaining sensitive env vars
+  delete process.env.TALENTA_EMAIL;
+  delete process.env.TALENTA_PASSWORD;
+
   setTimeout(async () => {
     await browser.close();
     process.exit(success ? 0 : 1);
