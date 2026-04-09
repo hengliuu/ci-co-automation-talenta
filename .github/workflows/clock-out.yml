@@ -47,8 +47,8 @@ jobs:
 
       - name: Random delay
         run: |
-          DELAY=$((RANDOM % 121 + 60))
-          echo "Waiting ${DELAY}s before clock out..."
+          DELAY=$((RANDOM % 421 + 180))
+          echo "Waiting ${DELAY}s (~$((DELAY / 60))m) before clock out..."
           sleep $DELAY
 
       - name: Determine geolocation
