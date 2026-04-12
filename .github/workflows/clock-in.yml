@@ -15,6 +15,10 @@ jobs:
       TZ: Asia/Jakarta
 
     steps:
+      - name: Record start time
+        id: timer
+        run: echo "start=$(date +%s)" >> $GITHUB_OUTPUT
+
       - uses: actions/checkout@v6
 
       - uses: pnpm/action-setup@v5
@@ -59,10 +63,12 @@ jobs:
             echo "Monday/Friday — using alternate location"
             echo "lat=-6.209077123779666" >> $GITHUB_OUTPUT
             echo "lng=106.63438083176038" >> $GITHUB_OUTPUT
+            echo "label=Home (Mon/Fri)" >> $GITHUB_OUTPUT
           else
             echo "Tue-Thu — using default location"
             echo "lat=-6.1993335" >> $GITHUB_OUTPUT
             echo "lng=106.7623687" >> $GITHUB_OUTPUT
+            echo "label=Default Office (Tue-Thu)" >> $GITHUB_OUTPUT
           fi
 
       - name: Run clock-in
@@ -78,3 +84,63 @@ jobs:
           name: error-screenshot-clock-in-${{ github.run_number }}
           path: error-*.png
           retention-days: 3
+
+      - name: Notify Telegram
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEO_LABEL: ${{ steps.geo.outputs.label }}
+          JOB_STATUS: ${{ job.status }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          START_TIME: ${{ steps.timer.outputs.start }}
+        run: |
+          if [ "$JOB_STATUS" = "success" ]; then
+            EMOJI="✅"; LABEL="Successful"
+          elif [ "$JOB_STATUS" = "cancelled" ]; then
+            EMOJI="⚠️"; LABEL="Cancelled"
+          else
+            EMOJI="❌"; LABEL="Failed!"
+          fi
+
+          ELAPSED=$(( $(date +%s) - START_TIME ))
+          DURATION="$(( ELAPSED / 60 ))m $(( ELAPSED % 60 ))s"
+
+          FAILURE_NOTE=""
+          if [ "$JOB_STATUS" = "failure" ]; then
+            FAILURE_NOTE="⚠️ <b>Action Required:</b> Check error screenshot in artifacts."
+          fi
+
+          NL=$'\n'
+          MSG="${EMOJI} <b>Clock In ${LABEL}</b>${NL}"
+          MSG+="─────────────────${NL}"
+          MSG+="📋 <b>Details:</b>${NL}"
+          MSG+="• Workflow: Clock In${NL}"
+          MSG+="• Status: ${JOB_STATUS}${NL}"
+          MSG+="• Date: $(date +'%d/%m/%Y %H:%M') WIB${NL}"
+          MSG+="• Run: #${RUN_NUMBER} (Attempt #${RUN_ATTEMPT})${NL}"
+          MSG+="${NL}"
+          MSG+="📍 Location: ${GEO_LABEL}${NL}"
+          MSG+="⏱ Duration: ${DURATION}${NL}"
+          if [ -n "$FAILURE_NOTE" ]; then
+            MSG+="${NL}${FAILURE_NOTE}${NL}"
+          fi
+          MSG+="${NL}🔗 <a href='${RUN_URL}'>View Run</a>"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            -d parse_mode="HTML" \
+            -d disable_web_page_preview="true" \
+            --data-urlencode "text=${MSG}")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::warning::Telegram notification failed (HTTP ${HTTP_CODE}): ${BODY}"
+          else
+            echo "Telegram notification sent successfully"
+          fi
