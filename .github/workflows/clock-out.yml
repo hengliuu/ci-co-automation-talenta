@@ -71,6 +71,10 @@ jobs:
             echo "label=Default Office (Tue-Thu)" >> $GITHUB_OUTPUT
           fi
 
+      - name: Record clock time
+        id: clock
+        run: echo "time=$(date +'%d/%m/%Y %H:%M')" >> $GITHUB_OUTPUT
+
       - name: Run clock-out
         run: pnpm run clock-out
         env:
@@ -95,6 +99,7 @@ jobs:
           RUN_NUMBER: ${{ github.run_number }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CLOCK_TIME: ${{ steps.clock.outputs.time }}
           START_TIME: ${{ steps.timer.outputs.start }}
         run: |
           if [ "$JOB_STATUS" = "success" ]; then
@@ -119,7 +124,7 @@ jobs:
           MSG+="📋 <b>Details:</b>${NL}"
           MSG+="• Workflow: Clock Out${NL}"
           MSG+="• Status: ${JOB_STATUS}${NL}"
-          MSG+="• Date: $(date +'%d/%m/%Y %H:%M') WIB${NL}"
+          MSG+="• Date: ${CLOCK_TIME} WIB${NL}"
           MSG+="• Run: #${RUN_NUMBER} (Attempt #${RUN_ATTEMPT})${NL}"
           MSG+="${NL}"
           MSG+="📍 Location: ${GEO_LABEL}${NL}"
