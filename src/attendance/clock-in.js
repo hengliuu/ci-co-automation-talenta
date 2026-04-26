@@ -8,9 +8,9 @@ dotenv.config();
 const log = createLogger('CLOCK-IN');
 
 async function clockIn(page) {
-  // Navigate to live attendance after login
-  log.start('Navigating to Live Attendance...');
-  await page.goto('https://hr.talenta.co/live-attendance', { waitUntil: 'domcontentloaded' });
+  // ensureLoggedIn already navigates to /live-attendance, just reload to ensure fresh state
+  log.start('Reloading Live Attendance page...');
+  await page.reload({ waitUntil: 'domcontentloaded', timeout: 120000 });
 
   // Human-like pause, wait for page to fully render
   await page.waitForTimeout(randomDelay(2000, 4000));
@@ -47,35 +47,29 @@ async function main() {
   const { browser, page } = await launchStealthBrowser();
   let success = false;
 
-  try {
-    await ensureLoggedIn(page, log);
-
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        log.info(`Clock In attempt ${attempt}/3`);
-        success = await clockIn(page);
-        if (success) break;
-      } catch (error) {
-        log.error(`Attempt ${attempt} error: ${error.message}`);
-        if (attempt === 3) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      log.info(`Clock In attempt ${attempt}/3`);
+      await ensureLoggedIn(page, log);
+      success = await clockIn(page);
+      if (success) break;
+    } catch (error) {
+      log.error(`Attempt ${attempt} error: ${error.message}`);
+      if (attempt === 3) {
+        try {
           await page.screenshot({ path: 'error-clock-in.png' });
           log.warn('Screenshot saved: error-clock-in.png');
-        }
-        // Wait before retry
-        await page.waitForTimeout(2000);
+        } catch { /* ignore screenshot errors */ }
       }
+      // Wait before retry with increasing backoff
+      const backoff = attempt * 5000;
+      log.info(`Waiting ${backoff / 1000}s before retry...`);
+      await page.waitForTimeout(backoff);
     }
-  } catch (error) {
-    log.error(`Fatal error: ${error.message}`);
-    await page.screenshot({ path: 'error-clock-in.png' });
   }
 
   // Logout sebelum tutup browser
   await logout(page, log);
-
-  // Final cleanup: wipe any remaining sensitive env vars
-  delete process.env.TALENTA_EMAIL;
-  delete process.env.TALENTA_PASSWORD;
 
   setTimeout(async () => {
     await browser.close();

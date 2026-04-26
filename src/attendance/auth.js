@@ -1,6 +1,6 @@
 export async function ensureLoggedIn(page, log) {
   log.start('Navigating to Talenta...');
-  await page.goto('https://hr.talenta.co/live-attendance', { waitUntil: 'domcontentloaded' });
+  await page.goto('https://hr.talenta.co/live-attendance', { waitUntil: 'domcontentloaded', timeout: 120000 });
   await page.waitForTimeout(3000);
 
   // Check if login form exists (means not logged in yet)
@@ -12,27 +12,31 @@ export async function ensureLoggedIn(page, log) {
     return;
   }
 
-  // Read credentials once, then wipe from env immediately after use
+  // Read credentials
   const email = process.env.TALENTA_EMAIL;
   const password = process.env.TALENTA_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error('TALENTA_EMAIL or TALENTA_PASSWORD not set');
+  }
 
   log.info('Filling credentials...');
   await page.fill('input[type="email"], input[name="email"]', email);
   await page.locator('input[type="password"]').first().fill(password);
-
-  // Wipe credentials from environment immediately after filling form
-  delete process.env.TALENTA_EMAIL;
-  delete process.env.TALENTA_PASSWORD;
-  log.info('Credentials wiped from environment');
 
   log.start('Signing in...');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 
   // Wait for login form to disappear (means login succeeded)
   log.info('Waiting for login to complete...');
-  await emailInput.waitFor({ state: 'hidden', timeout: 30000 });
+  await emailInput.waitFor({ state: 'hidden', timeout: 120000 });
   await page.waitForTimeout(2000);
   log.success('Login successful');
+
+  // Wipe credentials from environment only after successful login
+  delete process.env.TALENTA_EMAIL;
+  delete process.env.TALENTA_PASSWORD;
+  log.info('Credentials wiped from environment');
 }
 
 export async function logout(page, log) {
@@ -40,7 +44,7 @@ export async function logout(page, log) {
     log.start('Logging out...');
 
     // Try navigating to logout URL directly (most reliable)
-    await page.goto('https://hr.talenta.co/site/sign-out', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.goto('https://hr.talenta.co/site/sign-out', { waitUntil: 'domcontentloaded', timeout: 120000 });
     await page.waitForTimeout(2000);
 
     // Verify we're back at login page
