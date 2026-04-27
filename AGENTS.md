@@ -52,7 +52,7 @@ From `.env` (see `.env.example`):
 
 GitHub Actions secrets (Tailscale VPN):
 - `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` — Tailscale OAuth client credentials
-- `TS_EXIT_NODE` — exit node hostname/IP in Indonesia
+- `TS_EXIT_NODE` — comma-separated exit node hostnames/IPs in Indonesia (e.g. `node1,node2,node3`). Tried in order; first successful one wins.
 
 ## Conventions
 
