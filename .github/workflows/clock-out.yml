@@ -2,10 +2,18 @@ name: Clock Out
 
 on:
   workflow_dispatch:
+    inputs:
+      retry_count:
+        description: "Current retry attempt (0 = first run)"
+        required: false
+        default: "0"
+
+permissions:
+  actions: write
+  contents: read
 
 jobs:
   clock-out:
-    if: github.event_name == 'workflow_dispatch' || vars.CRON_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -44,14 +52,68 @@ jobs:
           tags: tag:ci
 
       - name: Route traffic through exit node
-        run: sudo -E tailscale set --exit-node=${{ secrets.TS_EXIT_NODE }} --accept-routes
+        env:
+          TS_EXIT_NODES: ${{ secrets.TS_EXIT_NODE }}
+        run: |
+          # Parse comma-separated exit nodes from secret
+          IFS=',' read -ra NODES <<< "$TS_EXIT_NODES"
+          echo "Found ${#NODES[@]} exit node(s) to try"
 
-      - name: Verify IP location
-        run: curl -s https://ipinfo.io/json | jq '{ip, city, region, country}'
+          for i in "${!NODES[@]}"; do
+            NODE="${NODES[$i]// /}"  # trim whitespace
+            NODE_NUM=$((i + 1))
+            echo ""
+            echo "========================================="
+            echo "Exit node ${NODE_NUM}/${#NODES[@]}: ${NODE:0:8}***"
+            echo "========================================="
+
+            for attempt in 1 2 3; do
+              echo "--- Attempt ${attempt}/3 for node ${NODE_NUM} ---"
+              sudo -E tailscale set --exit-node="$NODE" --accept-routes
+              sleep 8
+
+              COUNTRY=$(curl -s --max-time 15 https://ipinfo.io/json | jq -r '.country // empty')
+              echo "Detected country: '${COUNTRY}'"
+
+              if [ "$COUNTRY" = "ID" ]; then
+                echo "✅ Exit node active — traffic routed through Indonesia"
+                curl -s https://ipinfo.io/json | jq '{ip, city, region, country}'
+                exit 0
+              fi
+
+              echo "⚠️ Country is '${COUNTRY}', expected 'ID'."
+              sudo -E tailscale set --exit-node= 2>/dev/null || true
+              sleep 3
+            done
+
+            echo "❌ Node ${NODE_NUM} failed after 3 attempts, moving to next..."
+          done
+
+          echo ""
+          echo "❌ All ${#NODES[@]} exit node(s) failed. Dumping diagnostics:"
+          sudo tailscale status || true
+          exit 1
+
+      - name: Warmup & measure latency
+        run: |
+          echo "Warming up connection to hr.talenta.co..."
+          TOTAL=0
+          for i in 1 2 3; do
+            TIME=$(curl -o /dev/null -s -w "%{time_total}" --max-time 30 https://hr.talenta.co)
+            MS=$(echo "$TIME * 1000" | bc | cut -d. -f1)
+            echo "  Request ${i}: ${MS}ms"
+            TOTAL=$(echo "$TOTAL + $TIME" | bc)
+          done
+          AVG=$(echo "scale=1; $TOTAL / 3" | bc)
+          AVG_MS=$(echo "$AVG * 1000" | bc | cut -d. -f1)
+          echo "Average latency: ${AVG_MS}ms"
+          if [ "$(echo "$AVG > 30" | bc)" -eq 1 ]; then
+            echo "::warning::High average latency (${AVG_MS}ms) — Playwright timeouts set to 120s to compensate"
+          fi
 
       - name: Random delay
         run: |
-          DELAY=$((RANDOM % 421 + 180))
+          DELAY=$((RANDOM % 121 + 180))
           echo "Waiting ${DELAY}s (~$((DELAY / 60))m) before clock out..."
           sleep $DELAY
 
@@ -98,9 +160,12 @@ jobs:
           JOB_STATUS: ${{ job.status }}
           RUN_NUMBER: ${{ github.run_number }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{
+            github.run_id }}
           CLOCK_TIME: ${{ steps.clock.outputs.time }}
           START_TIME: ${{ steps.timer.outputs.start }}
+          RETRY_COUNT: ${{ github.event.inputs.retry_count || '0' }}
+          MAX_RETRY: "2"
         run: |
           if [ "$JOB_STATUS" = "success" ]; then
             EMOJI="✅"; LABEL="Successful"
@@ -115,7 +180,16 @@ jobs:
 
           FAILURE_NOTE=""
           if [ "$JOB_STATUS" = "failure" ]; then
-            FAILURE_NOTE="⚠️ <b>Action Required:</b> Check error screenshot in artifacts."
+            CURRENT_RETRY=$((RETRY_COUNT))
+            HOUR=$(date +%H)
+            MINUTE=$(date +%M)
+            TIME_NUM=$(( HOUR * 60 + MINUTE ))
+            if [ "$CURRENT_RETRY" -lt "$MAX_RETRY" ] && [ "$TIME_NUM" -lt 1410 ]; then
+              NEXT=$((CURRENT_RETRY + 1))
+              FAILURE_NOTE="🔄 <b>Auto-retry ${NEXT}/${MAX_RETRY} starting now...</b>"
+            else
+              FAILURE_NOTE="⚠️ <b>Action Required:</b> Max retries reached or outside time window. Check error screenshot in artifacts."
+            fi
           fi
 
           NL=$'\n'
@@ -126,6 +200,7 @@ jobs:
           MSG+="• Status: ${JOB_STATUS}${NL}"
           MSG+="• Date: ${CLOCK_TIME} WIB${NL}"
           MSG+="• Run: #${RUN_NUMBER} (Attempt #${RUN_ATTEMPT})${NL}"
+          MSG+="• Retry: ${RETRY_COUNT}/${MAX_RETRY}${NL}"
           MSG+="${NL}"
           MSG+="📍 Location: ${GEO_LABEL}${NL}"
           MSG+="⏱ Duration: ${DURATION}${NL}"
@@ -148,4 +223,44 @@ jobs:
             echo "::warning::Telegram notification failed (HTTP ${HTTP_CODE}): ${BODY}"
           else
             echo "Telegram notification sent successfully"
+          fi
+
+      - name: Auto-retry on failure
+        if: failure()
+        env:
+          RETRY_COUNT: ${{ github.event.inputs.retry_count || '0' }}
+          MAX_RETRY: "2"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          CURRENT_RETRY=$((RETRY_COUNT))
+
+          if [ "$CURRENT_RETRY" -ge "$MAX_RETRY" ]; then
+            echo "❌ Max retries reached (${CURRENT_RETRY}/${MAX_RETRY}). Giving up."
+            exit 0
+          fi
+
+          # Clock Out window: before 23:30 WIB (buffer from 23:59 limit)
+          HOUR=$(date +%H)
+          MINUTE=$(date +%M)
+          TIME_NUM=$(( HOUR * 60 + MINUTE ))
+          CUTOFF=$(( 23 * 60 + 30 ))
+
+          if [ "$TIME_NUM" -ge "$CUTOFF" ]; then
+            echo "❌ Outside time window (current: ${HOUR}:${MINUTE}, cutoff: 23:30). Too late to retry."
+            exit 0
+          fi
+
+          NEXT_RETRY=$((CURRENT_RETRY + 1))
+          echo "🔄 Triggering retry #${NEXT_RETRY}..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            -H "Authorization: token ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/clock-out.yml/dispatches" \
+            -d "{\"ref\":\"main\",\"inputs\":{\"retry_count\":\"${NEXT_RETRY}\"}}")
+
+          if [ "$HTTP_CODE" = "204" ]; then
+            echo "✅ Retry #${NEXT_RETRY} triggered successfully"
+          else
+            echo "::error::Failed to trigger retry (HTTP ${HTTP_CODE}). Manual re-run required."
+            exit 1
           fi
